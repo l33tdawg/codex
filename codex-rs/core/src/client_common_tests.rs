@@ -63,7 +63,10 @@ fn responses_lite_request_copies_strip_image_details() {
     let prompt = prompt_with_image_outputs();
     let original = prompt.input.clone();
 
-    let stripped = prompt.get_formatted_input_for_request(/*use_responses_lite*/ true);
+    let stripped = prompt.get_formatted_input_for_request(
+        /*use_responses_lite*/ true,
+        /*supports_hosted_web_search*/ true,
+    );
 
     assert_eq!(
         stripped,
@@ -107,9 +110,73 @@ fn responses_lite_request_copies_strip_image_details() {
     );
     assert_eq!(prompt.input, original);
     assert_eq!(
-        prompt.get_formatted_input_for_request(/*use_responses_lite*/ false),
+        prompt.get_formatted_input_for_request(
+            /*use_responses_lite*/ false,
+            /*supports_hosted_web_search*/ true,
+        ),
         original
     );
+}
+
+#[test]
+fn standard_responses_request_strips_lite_only_additional_tools() {
+    let prompt = Prompt {
+        input: vec![
+            ResponseItem::AdditionalTools {
+                id: None,
+                role: "developer".to_string(),
+                tools: vec![serde_json::json!({"type": "function", "name": "stale"})],
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "keep me".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let formatted = prompt.get_formatted_input_for_request(
+        /*use_responses_lite*/ false,
+        /*supports_hosted_web_search*/ true,
+    );
+
+    assert_eq!(formatted, vec![prompt.input[1].clone()]);
+}
+
+#[test]
+fn provider_without_hosted_search_strips_web_search_history() {
+    let prompt = Prompt {
+        input: vec![
+            ResponseItem::WebSearchCall {
+                id: None,
+                status: Some("completed".to_string()),
+                action: None,
+                internal_chat_message_metadata_passthrough: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "keep me".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            },
+        ],
+        ..Default::default()
+    };
+
+    let formatted = prompt.get_formatted_input_for_request(
+        /*use_responses_lite*/ false,
+        /*supports_hosted_web_search*/ false,
+    );
+
+    assert_eq!(formatted, vec![prompt.input[1].clone()]);
 }
 
 #[test]

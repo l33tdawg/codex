@@ -56,8 +56,18 @@ impl Prompt {
     pub(crate) fn get_formatted_input_for_request(
         &self,
         use_responses_lite: bool,
+        supports_hosted_web_search: bool,
     ) -> Vec<ResponseItem> {
         let mut input = self.input.clone();
+        // Prompt-only Responses Lite items are rebuilt for Lite requests and are
+        // not valid conversation history for the standard Responses API. Hosted
+        // web-search calls are likewise provider-specific and must not leak into
+        // providers (such as Ollama) that execute search through client tools.
+        input.retain(|item| {
+            (use_responses_lite || !matches!(item, ResponseItem::AdditionalTools { .. }))
+                && (supports_hosted_web_search
+                    || !matches!(item, ResponseItem::WebSearchCall { .. }))
+        });
         if use_responses_lite {
             strip_image_details(&mut input);
         }
