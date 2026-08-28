@@ -674,6 +674,91 @@ async fn text_only_mcp_content_uses_content_items() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn local_responses_provider_flattens_and_dispatches_mcp_tool_calls() -> anyhow::Result<()> {
+    skip_if_wine_exec!(
+        Ok(()),
+        "requires a Windows test_stdio_server in the Wine-exec environment"
+    );
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let call_id = "local-flat-mcp-1";
+    let server_name = "rmcp";
+    let flat_tool_name = "mcp__rmcp__cwd";
+    let tool_call_mock = mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_response_created("resp-1"),
+            responses::ev_function_call(call_id, flat_tool_name, r#"{}"#),
+            responses::ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let final_mock = mount_sse_once(
+        &server,
+        responses::sse(vec![
+            responses::ev_assistant_message("msg-1", "done"),
+            responses::ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    let command = remote_aware_stdio_server_bin()?;
+    let fixture = test_codex()
+        .with_model_info_override("gpt-5.4", |model| model.supports_search_tool = false)
+        .with_config(move |config| {
+            config.model_provider.name = "local-responses".to_string();
+            config.model_provider.requires_openai_auth = false;
+            config.model_provider.supports_websockets = false;
+            insert_mcp_server(
+                config,
+                server_name,
+                stdio_transport(command, /*env*/ None, Vec::new()),
+                TestMcpServerOptions {
+                    environment_id: remote_aware_environment_id(),
+                    ..Default::default()
+                },
+            );
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    wait_for_mcp_server(&fixture.codex, server_name).await?;
+
+    fixture
+        .codex
+        .start_or_steer_turn(read_only_user_turn(
+            &fixture,
+            "return the current directory",
+        ))
+        .await?;
+    wait_for_event(&fixture.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let initial_body = tool_call_mock.single_request().body_json();
+    let tools = initial_body["tools"]
+        .as_array()
+        .expect("request should contain tools");
+    assert!(tools.iter().any(|tool| {
+        tool.get("type").and_then(Value::as_str) == Some("function")
+            && tool.get("name").and_then(Value::as_str) == Some(flat_tool_name)
+    }));
+    assert!(!tools.iter().any(|tool| {
+        tool.get("type").and_then(Value::as_str) == Some("namespace")
+            && tool.get("name").and_then(Value::as_str) == Some("mcp__rmcp")
+    }));
+
+    let output = final_mock.single_request().function_call_output(call_id);
+    assert!(
+        !output.is_null(),
+        "flat MCP function call should dispatch to the namespaced runtime"
+    );
+
+    Ok(())
+}
+
 #[test_case(false; "configured servers")]
 #[test_case(true; "plugin servers")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

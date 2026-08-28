@@ -12,6 +12,8 @@ use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_6_LUNA_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_6_SOL_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
+use codex_model_provider_info::create_oss_provider_with_base_url;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::WebSearchMode;
@@ -1500,6 +1502,35 @@ async fn mcp_and_tool_search_follow_direct_and_deferred_tool_exposure() {
     assert!(matches!(
         reserved_namespace.visible_spec("tool_search"),
         ToolSpec::ToolSearch { .. }
+    ));
+}
+
+#[tokio::test]
+async fn local_responses_provider_exposes_mcp_tools_as_flat_functions() {
+    let plan = probe_with(
+        |turn| {
+            turn.provider = create_model_provider(
+                create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses),
+                /*auth_manager*/ None,
+            );
+        },
+        ToolPlanInputs {
+            tool_runtimes: vec![mcp_runtime(
+                "sage",
+                "mcp__sage",
+                "sage_turn",
+                ToolExposure::Direct,
+            )],
+            ..ToolPlanInputs::default()
+        },
+    )
+    .await;
+
+    plan.assert_visible_contains(&["mcp__sage__sage_turn"]);
+    plan.assert_visible_lacks(&["mcp__sage"]);
+    assert!(matches!(
+        plan.visible_spec("mcp__sage__sage_turn"),
+        ToolSpec::Function(_)
     ));
 }
 

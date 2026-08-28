@@ -455,9 +455,23 @@ impl ToolRegistry {
     }
 
     pub(crate) fn tool(&self, name: &ToolName) -> Option<Arc<dyn CoreToolRuntime>> {
-        self.tools
-            .get(&name.clone().with_default_namespace())
-            .map(|tool| Arc::clone(&tool.runtime))
+        self.resolved_tool(name).map(|(_, tool)| tool)
+    }
+
+    fn resolved_tool(&self, name: &ToolName) -> Option<(ToolName, Arc<dyn CoreToolRuntime>)> {
+        let requested = name.clone().with_default_namespace();
+        if let Some(tool) = self.tools.get(&requested) {
+            return Some((requested, Arc::clone(&tool.runtime)));
+        }
+        if !requested.is_default_namespace() {
+            return None;
+        }
+
+        self.tools.iter().find_map(|(registered_name, tool)| {
+            (!registered_name.is_default_namespace()
+                && registered_name.canonical_flat_name().as_ref() == requested.name.as_str())
+            .then(|| (registered_name.clone(), Arc::clone(&tool.runtime)))
+        })
     }
 
     #[cfg(test)]
@@ -482,8 +496,9 @@ impl ToolRegistry {
     }
 
     pub(crate) fn supports_parallel_tool_calls(&self, name: &ToolName) -> Option<bool> {
-        let tool = self.tools.get(&name.clone().with_default_namespace())?;
-        Some(tool.exposure != ToolExposure::Hidden && tool.runtime.supports_parallel_tool_calls())
+        let (resolved_name, runtime) = self.resolved_tool(name)?;
+        let exposure = self.tools.get(&resolved_name)?.exposure;
+        Some(exposure != ToolExposure::Hidden && runtime.supports_parallel_tool_calls())
     }
 
     #[expect(
@@ -495,7 +510,7 @@ impl ToolRegistry {
         mut invocation: ToolInvocation,
         terminal_outcome_reached: Option<Arc<AtomicBool>>,
     ) -> Result<AnyToolResult, FunctionCallError> {
-        let tool_name = invocation.tool_name.clone();
+        let requested_tool_name = invocation.tool_name.clone();
         let call_id_owned = invocation.call_id.clone();
         let otel = invocation.turn.session_telemetry.clone();
         let permission_profile = invocation.turn.permission_profile();
@@ -529,13 +544,14 @@ impl ToolRegistry {
         }
 
         let dispatch_trace = ToolDispatchTrace::start(&invocation);
-        let tool = match self.tool(&tool_name) {
-            Some(tool) => tool,
+        let (tool_name, tool) = match self.resolved_tool(&requested_tool_name) {
+            Some(resolved) => resolved,
             None => {
-                let message = unsupported_tool_call_message(&invocation.payload, &tool_name);
+                let message =
+                    unsupported_tool_call_message(&invocation.payload, &requested_tool_name);
                 let log_payload = tool_log_payload(&invocation.payload, &invocation.source);
                 otel.tool_result_with_tags(
-                    &tool_name,
+                    &requested_tool_name,
                     &call_id_owned,
                     log_payload.as_ref(),
                     Duration::ZERO,
@@ -549,6 +565,7 @@ impl ToolRegistry {
                 return Err(err);
             }
         };
+        invocation.tool_name = tool_name.clone();
         let telemetry_tags = tool.telemetry_tags(&invocation);
         let mut tool_result_tags =
             Vec::with_capacity(base_tool_result_tags.len() + telemetry_tags.len() + 1);

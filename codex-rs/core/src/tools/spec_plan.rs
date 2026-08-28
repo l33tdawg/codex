@@ -92,6 +92,7 @@ use codex_tools::can_request_original_image_detail;
 use codex_tools::collect_code_mode_exec_prompt_tool_definitions;
 use codex_tools::collect_request_plugin_install_entries;
 use codex_tools::default_namespace_description;
+use codex_tools::flatten_namespaced_tool_specs;
 use codex_tools::request_user_input_available_modes;
 use futures::future::BoxFuture;
 use std::collections::BTreeMap;
@@ -482,7 +483,7 @@ pub(crate) fn finalize_tool_router(
         &registry,
         &code_mode_tool_names,
         hosted_specs,
-    );
+    )?;
     let tool_namespaces_info = include_tool_namespaces_info
         .then(|| {
             collect_tool_namespaces_info(&registry, &code_mode_tool_names, &model_visible_specs)
@@ -540,7 +541,7 @@ fn build_model_visible_specs(
     registry: &ToolRegistry,
     code_mode_tool_names: &BTreeMap<String, ToolName>,
     hosted_specs: Vec<ToolSpec>,
-) -> Vec<ToolSpec> {
+) -> CodexResult<Vec<ToolSpec>> {
     let mut specs = Vec::new();
     for tool in registry.entries() {
         let exposure = tool.exposure;
@@ -565,12 +566,27 @@ fn build_model_visible_specs(
     }
     specs.extend(hosted_specs);
 
-    merge_into_namespaces(specs)
-        .into_iter()
-        .filter(|spec| {
-            namespace_tools_enabled(turn_context) || !matches!(spec, ToolSpec::Namespace(_))
-        })
-        .collect()
+    let specs = merge_into_namespaces(specs);
+    if namespace_tools_enabled(turn_context) {
+        return Ok(specs);
+    }
+
+    let specs = flatten_namespaced_tool_specs(specs);
+    let mut seen_names = HashSet::new();
+    for spec in &specs {
+        let name = match spec {
+            ToolSpec::Function(tool) => &tool.name,
+            ToolSpec::Freeform(tool) => &tool.name,
+            ToolSpec::Namespace(_) | ToolSpec::ToolSearch { .. } | ToolSpec::WebSearch { .. } => {
+                continue;
+            }
+        };
+        if !seen_names.insert(name) {
+            return Err(CodexErrorDetails::ToolCollision(name.clone()).into());
+        }
+    }
+
+    Ok(specs)
 }
 
 fn spec_for_model_request(

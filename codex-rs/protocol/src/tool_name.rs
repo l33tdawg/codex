@@ -1,7 +1,10 @@
 use serde::Deserialize;
 use serde::Serialize;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::fmt;
+
+const NAMESPACED_TOOL_NAME_DELIMITER: &str = "__";
 
 /// Namespace used for top-level function and custom tools.
 pub const DEFAULT_FUNCTION_NAMESPACE: &str = "functions";
@@ -49,6 +52,24 @@ impl ToolName {
             None | Some("") | Some(DEFAULT_FUNCTION_NAMESPACE)
         )
     }
+
+    /// Returns the stable function name used when a wire provider cannot
+    /// preserve the namespace/name split.
+    pub fn canonical_flat_name(&self) -> Cow<'_, str> {
+        if self.is_default_namespace() {
+            return Cow::Borrowed(self.name.as_str());
+        }
+
+        match self.namespace.as_deref() {
+            Some(namespace) => Cow::Owned(format!(
+                "{}{}{}",
+                namespace.trim_end_matches('_'),
+                NAMESPACED_TOOL_NAME_DELIMITER,
+                self.name.trim_start_matches('_')
+            )),
+            None => Cow::Borrowed(self.name.as_str()),
+        }
+    }
 }
 
 impl fmt::Display for ToolName {
@@ -92,3 +113,7 @@ impl From<&str> for ToolName {
         Self::plain(name)
     }
 }
+
+#[cfg(test)]
+#[path = "tool_name_tests.rs"]
+mod tests;

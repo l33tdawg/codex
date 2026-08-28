@@ -11,6 +11,7 @@ use crate::ResponsesApiTool;
 use crate::create_tools_json_for_responses_api;
 use crate::create_tools_json_for_responses_lite;
 use crate::create_tools_raw_json_for_responses_api;
+use crate::flatten_namespaced_tool_specs;
 use codex_protocol::config_types::WebSearchContextSize;
 use codex_protocol::config_types::WebSearchFilters as ConfigWebSearchFilters;
 use codex_protocol::config_types::WebSearchUserLocation as ConfigWebSearchUserLocation;
@@ -334,6 +335,58 @@ fn namespace_tool_spec_serializes_expected_wire_shape() {
                 },
             ],
         })
+    );
+}
+
+#[test]
+fn namespace_tool_specs_flatten_to_canonical_top_level_names() {
+    let specs = flatten_namespaced_tool_specs([ToolSpec::Namespace(ResponsesApiNamespace {
+        name: "mcp__sage".to_string(),
+        description: "SAGE tools".to_string(),
+        tools: vec![
+            ResponsesApiNamespaceTool::Function(ResponsesApiTool {
+                name: "sage_turn".to_string(),
+                description: "Recall and store memory".to_string(),
+                strict: false,
+                defer_loading: None,
+                parameters: JsonSchema::default(),
+                output_schema: None,
+            }),
+            ResponsesApiNamespaceTool::Custom(FreeformTool {
+                name: "query".to_string(),
+                description: "Query SAGE".to_string(),
+                defer_loading: None,
+                format: FreeformToolFormat {
+                    r#type: "grammar".to_string(),
+                    syntax: "lark".to_string(),
+                    definition: "start: /.+/".to_string(),
+                },
+            }),
+        ],
+    })]);
+
+    assert_eq!(
+        specs,
+        vec![
+            ToolSpec::Function(ResponsesApiTool {
+                name: "mcp__sage__sage_turn".to_string(),
+                description: "Recall and store memory".to_string(),
+                strict: false,
+                defer_loading: None,
+                parameters: JsonSchema::default(),
+                output_schema: None,
+            }),
+            ToolSpec::Freeform(FreeformTool {
+                name: "mcp__sage__query".to_string(),
+                description: "Query SAGE".to_string(),
+                defer_loading: None,
+                format: FreeformToolFormat {
+                    r#type: "grammar".to_string(),
+                    syntax: "lark".to_string(),
+                    definition: "start: /.+/".to_string(),
+                },
+            }),
+        ]
     );
 }
 

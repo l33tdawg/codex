@@ -372,6 +372,51 @@ fn registry_allows_identical_names_in_different_namespaces() {
     assert_eq!(registry.first_collision(), None);
 }
 
+#[test]
+fn registry_resolves_canonical_flat_names_to_namespaced_runtimes() {
+    let namespaced_name = codex_tools::ToolName::namespaced("mcp__sage", "sage_turn");
+    let namespaced_handler = Arc::new(TestHandler {
+        tool_name: namespaced_name.clone(),
+    });
+    let registry =
+        ToolRegistry::from_tools([namespaced_handler.clone() as Arc<dyn CoreToolRuntime>]);
+
+    let (resolved_name, resolved_runtime) = registry
+        .resolved_tool(&codex_tools::ToolName::plain("mcp__sage__sage_turn"))
+        .expect("flat function name should resolve");
+
+    assert_eq!(resolved_name, namespaced_name);
+    assert!(Arc::ptr_eq(
+        &resolved_runtime,
+        &(namespaced_handler as Arc<dyn CoreToolRuntime>)
+    ));
+}
+
+#[test]
+fn registry_prefers_an_exact_plain_tool_over_a_flat_namespace_alias() {
+    let plain_name = codex_tools::ToolName::plain("mcp__sage__sage_turn");
+    let plain_handler = Arc::new(TestHandler {
+        tool_name: plain_name.clone(),
+    });
+    let namespaced_handler = Arc::new(TestHandler {
+        tool_name: codex_tools::ToolName::namespaced("mcp__sage", "sage_turn"),
+    });
+    let registry = ToolRegistry::from_tools([
+        plain_handler.clone() as Arc<dyn CoreToolRuntime>,
+        namespaced_handler as Arc<dyn CoreToolRuntime>,
+    ]);
+
+    let (resolved_name, resolved_runtime) = registry
+        .resolved_tool(&plain_name)
+        .expect("exact plain tool should resolve");
+
+    assert_eq!(resolved_name, plain_name.with_default_namespace());
+    assert!(Arc::ptr_eq(
+        &resolved_runtime,
+        &(plain_handler as Arc<dyn CoreToolRuntime>)
+    ));
+}
+
 #[tokio::test]
 async fn readiness_selects_exact_tool_with_registry_owned_exposure() {
     let (session, _turn) = crate::session::tests::make_session_and_context().await;

@@ -4,6 +4,7 @@ use crate::LoadableToolSpec;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiNamespaceTool;
 use crate::ResponsesApiTool;
+use crate::ToolName;
 use crate::default_namespace_description;
 use codex_protocol::DEFAULT_FUNCTION_NAMESPACE;
 use codex_protocol::config_types::WebSearchContextSize;
@@ -74,6 +75,35 @@ impl From<LoadableToolSpec> for ToolSpec {
             LoadableToolSpec::Namespace(namespace) => ToolSpec::Namespace(namespace),
         }
     }
+}
+
+/// Flattens namespace wrappers for Responses-compatible providers that only
+/// understand top-level function/custom tool definitions.
+pub fn flatten_namespaced_tool_specs(specs: impl IntoIterator<Item = ToolSpec>) -> Vec<ToolSpec> {
+    specs
+        .into_iter()
+        .flat_map(|spec| match spec {
+            ToolSpec::Namespace(namespace) => namespace
+                .tools
+                .into_iter()
+                .map(|tool| match tool {
+                    ResponsesApiNamespaceTool::Function(mut tool) => {
+                        tool.name = ToolName::namespaced(&namespace.name, tool.name)
+                            .canonical_flat_name()
+                            .into_owned();
+                        ToolSpec::Function(tool)
+                    }
+                    ResponsesApiNamespaceTool::Custom(mut tool) => {
+                        tool.name = ToolName::namespaced(&namespace.name, tool.name)
+                            .canonical_flat_name()
+                            .into_owned();
+                        ToolSpec::Freeform(tool)
+                    }
+                })
+                .collect::<Vec<_>>(),
+            spec => vec![spec],
+        })
+        .collect()
 }
 
 /// Returns JSON values that are compatible with Function Calling in the

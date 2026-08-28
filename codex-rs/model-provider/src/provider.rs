@@ -360,6 +360,7 @@ impl ModelProvider for ConfiguredModelProvider {
         };
 
         ProviderCapabilities {
+            namespace_tools: remote_compaction == RemoteCompactionSupport::V2,
             remote_compaction,
             ..ProviderCapabilities::default()
         }
@@ -687,6 +688,34 @@ mod tests {
         for (provider_info, expected) in cases {
             let provider = create_model_provider(provider_info, /*auth_manager*/ None);
             assert_eq!(provider.capabilities().remote_compaction, expected);
+        }
+    }
+
+    #[test]
+    fn configured_provider_namespace_tools_match_native_responses_support() {
+        let cases = [
+            (
+                ModelProviderInfo::create_openai_provider(/*base_url*/ None),
+                true,
+            ),
+            (
+                ModelProviderInfo {
+                    name: "Azure".to_string(),
+                    base_url: Some("https://example.com/openai".to_string()),
+                    ..ModelProviderInfo::default()
+                },
+                true,
+            ),
+            (
+                create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses),
+                false,
+            ),
+            (provider_for("https://example.test/v1".to_string()), false),
+        ];
+
+        for (provider_info, expected) in cases {
+            let provider = create_model_provider(provider_info, /*auth_manager*/ None);
+            assert_eq!(provider.capabilities().namespace_tools, expected);
         }
     }
 
