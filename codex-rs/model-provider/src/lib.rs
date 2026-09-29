@@ -29,3 +29,51 @@ pub use provider::ProviderUnauthorizedRecovery;
 pub use provider::RemoteCompactionSupport;
 pub use provider::SharedModelProvider;
 pub use provider::create_model_provider;
+
+/// Resolve the model used for automatic approval review.
+///
+/// An explicit `approval_review_model` in the provider configuration takes
+/// precedence over the provider's own default (the built-in
+/// `codex-auto-review` slug, or a provider-specific ID such as the ones
+/// Amazon Bedrock returns).
+pub fn resolve_approval_review_model(provider: &dyn ModelProvider) -> String {
+    provider
+        .info()
+        .approval_review_model
+        .clone()
+        .unwrap_or_else(|| provider.approval_review_preferred_model().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_model_provider_info::ModelProviderInfo;
+
+    #[test]
+    fn resolve_approval_review_model_prefers_provider_config() {
+        let provider = create_model_provider(
+            ModelProviderInfo {
+                name: "deepseek".to_string(),
+                approval_review_model: Some("deepseek-flash".to_string()),
+                ..ModelProviderInfo::default()
+            },
+            /*auth_manager*/ None,
+        );
+
+        assert_eq!(
+            resolve_approval_review_model(provider.as_ref()),
+            "deepseek-flash"
+        );
+    }
+
+    #[test]
+    fn resolve_approval_review_model_falls_back_to_provider_default() {
+        let provider =
+            create_model_provider(ModelProviderInfo::default(), /*auth_manager*/ None);
+
+        assert_eq!(
+            resolve_approval_review_model(provider.as_ref()),
+            provider.approval_review_preferred_model()
+        );
+    }
+}

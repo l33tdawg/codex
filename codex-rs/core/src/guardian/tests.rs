@@ -3784,6 +3784,29 @@ async fn guardian_review_session_config_allows_pinned_disabled_feature() {
 }
 
 #[tokio::test]
+async fn guardian_review_session_config_uses_provider_approval_review_model() {
+    let server = start_mock_server().await;
+    let (session, mut turn) = guardian_test_session_and_turn(&server).await;
+    let mut provider_info = turn.config.model_provider.clone();
+    provider_info.approval_review_model = Some("gpt-5.6-sol".to_string());
+    let auth_manager = turn.auth_manager.clone();
+    Arc::get_mut(&mut turn)
+        .expect("turn should be unique")
+        .provider = create_model_provider(provider_info, auth_manager);
+
+    let guardian_config = guardian_review_session_config(session.as_ref(), turn.as_ref())
+        .await
+        .expect("guardian config")
+        .spawn_config;
+
+    assert_eq!(
+        guardian_config.model.as_deref(),
+        Some("gpt-5.6-sol"),
+        "provider approval_review_model should drive the guardian review model"
+    );
+}
+
+#[tokio::test]
 async fn guardian_review_session_config_uses_parent_active_model_instead_of_hardcoded_slug() {
     let mut parent_config = test_config().await;
     parent_config.model = Some("configured-model".to_string());

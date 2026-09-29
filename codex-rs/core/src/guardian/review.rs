@@ -845,7 +845,8 @@ pub(super) async fn guardian_review_session_config(
             turn.config.http_client_factory(),
         )
         .await;
-    let default_review_model_id = turn.provider.approval_review_preferred_model();
+    let default_review_model_id =
+        codex_model_provider::resolve_approval_review_model(turn.provider.as_ref());
     let preferred_reasoning_effort = |supports_low: bool, fallback| {
         if supports_low {
             Some(codex_protocol::openai_models::ReasoningEffort::Low)
@@ -854,7 +855,7 @@ pub(super) async fn guardian_review_session_config(
         }
     };
     let model_override = turn.model_info().auto_review_model_override.as_deref();
-    let review_model_id = model_override.unwrap_or(default_review_model_id);
+    let review_model_id = model_override.unwrap_or(default_review_model_id.as_str());
     let review_model = available_models
         .iter()
         .find(|preset| preset.model == review_model_id);
@@ -923,7 +924,7 @@ pub(super) async fn guardian_review_session_config(
         spawn_config,
         model: guardian_model,
         reasoning_effort: guardian_reasoning_effort,
-        default_review_model_id: default_review_model_id.to_string(),
+        default_review_model_id,
         catalog_contains_auto_review: guardian_catalog_contains_auto_review,
         model_overridden: guardian_review_model_overridden,
         model_override: guardian_review_model_override,

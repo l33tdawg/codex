@@ -2131,6 +2131,10 @@
       "additionalProperties": false,
       "description": "Serializable representation of a provider definition.",
       "properties": {
+        "approval_review_model": {
+          "description": "Optional model to use for automatic approval review when the active model's catalog entry does not set `auto_review_model_override`.\n\nProviders that only serve their own model IDs (for example a local OpenAI-compatible gateway) can point this at a model the provider accepts, instead of relying on the built-in `codex-auto-review` slug.",
+          "type": "string"
+        },
         "auth": {
           "allOf": [
             {

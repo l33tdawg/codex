@@ -148,6 +148,13 @@ pub struct ModelProviderInfo {
     /// Whether this provider supports the standalone web-search endpoint.
     #[serde(default)]
     pub supports_standalone_web_search: bool,
+    /// Optional model to use for automatic approval review when the active
+    /// model's catalog entry does not set `auto_review_model_override`.
+    ///
+    /// Providers that only serve their own model IDs (for example a local
+    /// OpenAI-compatible gateway) can point this at a model the provider
+    /// accepts, instead of relying on the built-in `codex-auto-review` slug.
+    pub approval_review_model: Option<String>,
 }
 
 /// AWS SigV4 auth configuration for a model provider.
@@ -417,6 +424,7 @@ impl ModelProviderInfo {
             requires_openai_auth: true,
             supports_websockets: true,
             supports_standalone_web_search: true,
+            approval_review_model: None,
         }
     }
 
@@ -452,6 +460,7 @@ impl ModelProviderInfo {
             requires_openai_auth: false,
             supports_websockets: false,
             supports_standalone_web_search: false,
+            approval_review_model: None,
         }
     }
 
@@ -628,6 +637,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         requires_openai_auth: false,
         supports_websockets: false,
         supports_standalone_web_search: false,
+        approval_review_model: None,
     }
 }
 

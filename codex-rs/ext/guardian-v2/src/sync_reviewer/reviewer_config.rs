@@ -94,11 +94,12 @@ async fn select_reviewer_model(
         parent_config.model_provider.clone(),
         Some(thread_manager.auth_manager()),
     );
-    let preferred_review_model = provider.approval_review_preferred_model();
+    let preferred_review_model =
+        codex_model_provider::resolve_approval_review_model(provider.as_ref());
     let selected_review_model = parent_model_info
         .auto_review_model_override
         .as_deref()
-        .unwrap_or(preferred_review_model);
+        .unwrap_or(preferred_review_model.as_str());
     let available_models = models_manager
         .list_models(
             RefreshStrategy::Offline,
